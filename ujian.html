@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal Ujian</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--tx:#1d2433;--mut:#6b7385;--pri:#2563eb;--ok:#16a34a;--off:#cbd2e0;--bd:#e3e7f0}
+@media(prefers-color-scheme:dark){:root{--bg:#10141f;--card:#1a2030;--tx:#e8ebf3;--mut:#98a1b5;--pri:#5b8cff;--ok:#22c55e;--off:#38415a;--bd:#2a3246}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);padding:24px 16px}
+.wrap{max-width:900px;margin:auto}
+h1{margin:0 0 4px;font-size:26px}
+.sub{color:var(--mut);margin-bottom:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:20px;text-align:center}
+.card h2{margin:0;font-size:22px}
+.judul{color:var(--mut);min-height:22px;margin:4px 0 12px;font-size:14px}
+.btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;font-weight:600;color:#fff;background:var(--off);cursor:not-allowed;text-decoration:none}
+.btn.on{background:var(--ok);cursor:pointer}
+.btn.on:hover{filter:brightness(1.1)}
+.info{font-size:13px;color:var(--mut);margin-top:10px;line-height:1.5}
+.admin-toggle{margin-top:28px;text-align:center}
+.link{background:none;border:0;color:var(--pri);cursor:pointer;font-size:14px}
+#admin{display:none;margin-top:16px;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:20px}
+#admin h3{margin-top:0}
+.row{display:grid;grid-template-columns:70px 1fr;gap:8px;align-items:center;margin-bottom:8px}
+.k{border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+input{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.save{background:var(--pri);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-weight:600;cursor:pointer}
+.msg{margin-left:10px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📝 Portal Ujian</h1>
+  <div class="sub">Tombol akan aktif otomatis sesuai jadwal ujian (WIB).</div>
+  <div class="grid" id="grid"></div>
+
+  <div class="admin-toggle"><button class="link" id="tg">🔒 Admin</button></div>
+  <div id="admin">
+    <h3>Pengaturan Jadwal</h3>
+    <div class="row"><label>Password</label><input type="password" id="pw" placeholder="Password admin"></div>
+    <button class="save" id="load" style="margin-bottom:14px">Masuk &amp; Muat Jadwal</button>
+    <div id="form" style="display:none">
+      <div id="fields"></div>
+      <button class="save" id="save">Simpan</button><span class="msg" id="msg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== GANTI DENGAN URL WEB APP GOOGLE APPS SCRIPT ANDA ======
+const API_URL = "PASTE_URL_WEB_APP_DI_SINI";
+// ===============================================================
+
+const KELAS = [7, 8, 9];
+let data = null, offset = 0;
+const $ = id => document.getElementById(id);
+const fmt = ms => new Date(ms).toLocaleString("id-ID", {timeZone:"Asia/Jakarta", weekday:"long", day:"numeric", month:"long", hour:"2-digit", minute:"2-digit"}) + " WIB";
+const toInput = ms => ms ? new Date(ms + 7*3600e3).toISOString().slice(0,16) : "";
+const fromInput = v => v ? v + ":00+07:00" : "";
+const dur = s => { const h=Math.floor(s/3600), m=Math.floor(s%3600/60), d=Math.floor(h/24);
+  return (d?d+"h ":"") + String(h%24).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(Math.floor(s%60)).padStart(2,"0"); };
+
+async function fetchData(pw){
+  const r = await fetch(API_URL + (pw ? "?pw=" + encodeURIComponent(pw) : ""));
+  return r.json();
+}
+
+async function refresh(){
+  try{
+    const d = await fetchData();
+    offset = d.now - Date.now();
+    data = d.kelas;
+    render();
+  }catch(e){ $("grid").innerHTML = '<div class="card">Gagal memuat jadwal. Periksa API_URL.</div>'; }
+}
+
+function render(){
+  $("grid").innerHTML = KELAS.map(k => `
+    <div class="card"><h2>Kelas ${k}</h2>
+      <div class="judul">${data[k].judul || "&nbsp;"}</div>
+      <a class="btn" id="b${k}" target="_blank" rel="noopener">…</a>
+      <div class="info" id="i${k}"></div></div>`).join("");
+  tick();
+}
+
+function tick(){
+  if(!data) return;
+  const now = Date.now() + offset;
+  KELAS.forEach(k => {
+    const j = data[k], b = $("b"+k), i = $("i"+k);
+    if(!b) return;
+    if(!j.start){ b.className="btn"; b.textContent="Belum dijadwalkan"; b.removeAttribute("href"); i.textContent=""; return; }
+    if(now < j.start){
+      b.className="btn"; b.textContent="Belum Dibuka"; b.removeAttribute("href");
+      i.innerHTML = "Dibuka: " + fmt(j.start) + "<br>Mulai dalam " + dur((j.start-now)/1000);
+      if(j.start - now < 1000) refresh();
+    } else if(now <= j.end){
+      if(!j.link){ refresh(); return; }
+      b.className="btn on"; b.textContent="Mulai Ujian ▶"; b.href=j.link;
+      i.innerHTML = "Ditutup: " + fmt(j.end) + "<br>Sisa waktu " + dur((j.end-now)/1000);
+    } else {
+      b.className="btn"; b.textContent="Ujian Ditutup"; b.removeAttribute("href");
+      i.textContent = "Berakhir: " + fmt(j.end);
+    }
+  });
+}
+
+// ====== ADMIN ======
+$("tg").onclick = () => { const a=$("admin"); a.style.display = a.style.display==="block" ? "none" : "block"; };
+$("load").onclick = async () => {
+  try{
+    const d = await fetchData($("pw").value);
+    if(d.error){ alert(d.error); return; }
+    $("fields").innerHTML = KELAS.map(k => { const j=d.kelas[k]; return `
+      <div class="k"><b>Kelas ${k}</b>
+        <div class="row"><label>Judul</label><input id="t${k}" value="${(j.judul||"").replace(/"/g,"&quot;")}" placeholder="mis. PTS Matematika"></div>
+        <div class="row"><label>Link</label><input id="l${k}" value="${j.link||""}" placeholder="https://script.google.com/... atau link Google Form"></div>
+        <div class="row"><label>Mulai</label><input type="datetime-local" id="s${k}" value="${toInput(j.start)}"></div>
+        <div class="row"><label>Selesai</label><input type="datetime-local" id="e${k}" value="${toInput(j.end)}"></div>
+      </div>`; }).join("");
+    $("form").style.display = "block";
+  }catch(e){ alert("Gagal terhubung ke server."); }
+};
+$("save").onclick = async () => {
+  const payload = {};
+  KELAS.forEach(k => payload["k"+k] = {judul:$("t"+k).value, link:$("l"+k).value.trim(), start:fromInput($("s"+k).value), end:fromInput($("e"+k).value)});
+  $("msg").textContent = "Menyimpan…";
+  try{
+    const r = await fetch(API_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify({pw:$("pw").value, data:payload})});
+    const d = await r.json();
+    $("msg").textContent = d.ok ? "✅ Tersimpan" : "❌ " + (d.error||"Gagal");
+    if(d.ok) refresh();
+  }catch(e){ $("msg").textContent = "❌ Gagal menyimpan"; }
+};
+
+refresh();
+setInterval(tick, 1000);
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
